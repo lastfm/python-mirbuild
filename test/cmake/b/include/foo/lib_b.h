@@ -1,0 +1,1 @@
+#define LIB_B_CONSTANT 4711

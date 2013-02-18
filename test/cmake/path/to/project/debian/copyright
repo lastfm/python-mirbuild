@@ -1,0 +1,17 @@
+This package was debianized by Marcus Holland-Moritz <marcus@last.fm> on
+Thu, 30 Jun 2011 17:26:45 +0100.
+
+Upstream Author(s):
+
+    Last.fm
+
+Copyright:
+
+    Copyright (C) 2011 Last.fm Ltd
+
+License:
+
+    <Put the license of the package here indented by 4 spaces>
+
+The Debian packaging is (C) 2011, Marcus Holland-Moritz <marcus@last.fm> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.

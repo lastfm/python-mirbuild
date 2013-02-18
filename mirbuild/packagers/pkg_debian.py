@@ -1,0 +1,477 @@
+# -*- coding: utf-8 -*-
+
+r"""
+Packaging modeling classes
+
+The classes in this file implement the logic required to package a project.
+
+"""
+
+__author__ = 'Marcus Holland-Moritz <marcus@last.fm>'
+__all__ = 'DebianPackaging DebianRules DebianOptions DebianCompat'.split()
+
+from mirbuild.tools import ScopedFileBase, ScopedFileCopy, LazyFileWriter
+from mirbuild.options import LocalOptions
+from optparse import OptionGroup
+from debian.debfile import Deb822
+import json, os, re, sys
+import mirbuild.packaging
+
+class DebianPackageInfo(mirbuild.packaging.PackageInfo):
+    def __init__(self, data):
+        self.__data = data
+
+    @property
+    def summary(self):
+        return self.__desc(True)
+
+    @property
+    def description(self):
+        return self.__desc()
+
+    def __desc(self, summary = False):
+        if self.__data is not None:
+            desc = self.__data.get('Description', None)
+            if desc is not None:
+                lines = [ x.lstrip() for x in desc.split('\n') ]
+                return lines[0] if summary else lines[1:]
+        return None
+
+class DebianControl(object):
+    control_file = 'debian/control'
+
+    def __init__(self, filename = control_file):
+        m = {}
+        current = None
+        self.__src = {}
+        self.__pkgs = {}
+        for p in Deb822.iter_paragraphs(open(filename)):
+            for e in p.items():
+                if e[0] == 'Source':
+                    m['source'] = e[1]
+                elif e[0] == 'Package':
+                    if not m.has_key('package'):
+                        m['package'] = []
+                    m['package'].append(e[1])
+                    current = e[1]
+                    self.__pkgs[current] = {}
+                elif current is None:
+                    self.__src[e[0]] = e[1]
+                else:
+                    self.__pkgs[current][e[0]] = e[1]
+        self.__meta = m if m else None
+
+    def package_info(self, package):
+        return DebianPackageInfo(self.__pkgs.get(package, None))
+
+    @property
+    def meta(self):
+        return self.__meta
+
+    @property
+    def packages(self):
+        if self.__meta is None:
+            return []
+        return self.__meta.get('package', [])
+
+    @property
+    def package(self):
+        pkgs = self.packages
+        if len(pkgs) != 1:
+            raise RuntimeError(('No packages' if len(pkgs) == 0 else 'More than one package') + ' defined in control file')
+        return pkgs[0]
+
+    @property
+    def debug_packages(self):
+        if self.__meta is None:
+            return []
+        return [i for i in self.__meta.get('package', []) if i.endswith('-dbg')]
+
+class DebianRules(ScopedFileBase):
+    rules_file = 'debian/rules'
+
+    def __init__(self, build_py = 'build.py', verbose = False, debug = False):
+        ScopedFileBase.__init__(self, self.rules_file)
+        self.verbose = verbose
+        self.debug = debug
+        self.python_executable = sys.executable
+        self.__targets = {}
+        self.dh_options = []
+        self.build_py = build_py
+        self.build_args = '--called-by-packager --noconfig'
+        if verbose:
+            self.build_args += ' -v'
+        if debug:
+            self.build_args += ' -d'
+
+        self.target_set('override_dh_auto_configure', '@$(PYTHON) {build_py} configure {build_args} --prefix=/usr --install-destdir=$(TMP)')
+        self.target_set('override_dh_auto_build', '@$(PYTHON) {build_py} {build_args} build')
+        self.target_set('override_dh_auto_clean', '@$(PYTHON) {build_py} {build_args} distclean')
+        self.target_set('override_dh_auto_install', '@$(PYTHON) {build_py} {build_args} install')
+        self.target_set('override_dh_auto_test', '@if $(PYTHON) {build_py} {build_args} has command test; then $(PYTHON) {build_py} {build_args} test; fi')
+
+        try:
+            self.__debug_packages = DebianControl().debug_packages
+        except (IOError, KeyError):
+            self.__debug_packages = []
+
+        if self.__debug_packages:
+            for pkg in self.__debug_packages:
+                self.target_append('override_dh_strip', 'dh_strip -p{0} --dbg-package={1}\n'.format(re.sub('-dbg$', '', pkg), pkg))
+        else:
+            self.target_set('override_dh_strip', '@echo "NOT stripping binaries"')
+
+    @staticmethod
+    def __normalise_code(code):
+        if code is None:
+            return []
+        elif isinstance(code, basestring):
+            return [code]
+        else:
+            return code
+
+    def target_set(self, target, code = None):
+        self.__targets[target] = self.__normalise_code(code)
+
+    def target_prepend(self, target, code):
+        self.__targets[target] = self.__normalise_code(code) + self.__targets.get(target, [])
+
+    def target_append(self, target, code):
+        self.__targets[target] = self.__targets.get(target, []) + self.__normalise_code(code)
+
+    def target_unset(self, target):
+        self.__targets.pop(target, None)
+
+    def create(self):
+        if self.__is_autogenerated():
+            self.__write_file()
+
+    def remove(self):
+        if self.__is_autogenerated():
+            super(DebianRules, self).remove()
+
+    def __is_autogenerated(self):
+        if not os.path.exists(self.rules_file):
+            return True
+        try:
+            fh = open(self.rules_file, 'r')
+            for line in fh:
+                if re.match('#\s+THIS FILE WAS AUTOGENERATED BY MIRBUILD\s+#', line):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def __write_file(self):
+        pkgs = DebianControl().packages
+        tmpdir = pkgs[0] if len(pkgs) == 1 and not os.path.exists(os.path.join('debian', pkgs[0] + '.install')) else 'tmp'
+
+        fh = LazyFileWriter(self.rules_file, executable = True)
+        fh.create()
+        fh.write('''#!/usr/bin/make -f
+#########################################################################
+#                                                                       #
+#               -----------------------------------------               #
+#                THIS FILE WAS AUTOGENERATED BY MIRBUILD                #
+#               -----------------------------------------               #
+#                                                                       #
+#  If you really have to customise the rules file, please remove this   #
+#  header and I'll never bother you again. Please try to keep in mind   #
+#  that this means you can't take advantage of any future improvements  #
+#  an autogenerated rules file might bring. You have been warned! ;-)   #
+#                                                                       #
+#########################################################################
+
+PYTHON={0}{1}
+TMP=$(CURDIR)/debian/{2}/
+'''.format(self.python_executable, ' -d' if self.debug else '', tmpdir))
+        if self.verbose or self.debug:
+            fh.write('\nexport DH_VERBOSE=1\n')
+        fh.write('''
+%:
+\tdh $@{0}
+
+'''.format(''.join((' '+i) for i in self.dh_options)))
+        for target in sorted(self.__targets):
+            fh.write('\n{0}:\n'.format(target))
+            for line in self.__targets[target]:
+                fh.write('\t{0}\n'.format(line.format(**self.__dict__)))
+            fh.write('\n')
+
+        fh.commit()
+        self._set_created()
+
+class DebianCompat(ScopedFileBase):
+    compat_file = 'debian/compat'
+
+    def __init__(self, compat = '7'):
+        ScopedFileBase.__init__(self, self.compat_file)
+        self.__compat = compat
+
+    def create(self):
+        self._create('{0}\n'.format(self.__compat))
+
+class DebianOptions(ScopedFileBase):
+    options_file = 'debian/source/local-options'
+
+    def __init__(self):
+        ScopedFileBase.__init__(self, self.options_file)
+
+    def create(self):
+        self._create('tar-ignore = ".git"\n')
+
+class DebianPostinst(ScopedFileBase):
+    def __init__(self, package, uid = None, gid = None, dir = None, svc = None):
+        ScopedFileBase.__init__(self, 'debian/{0}.postinst'.format(package))
+        self.__pkg = package
+        self.__uid = uid or []
+        self.__gid = gid or []
+        self.__dir = dir or []
+        self.__svc = svc or []
+
+    def create(self):
+        sh = '''#!/bin/bash -e
+#
+# Debian post installation script
+
+set -e
+
+case "$1" in
+        configure)
+                # continue below
+                ;;
+
+        abort-upgrade|abort-remove|abort-deconfigure)
+                exit 0
+                ;;
+
+        *)
+                echo "{0} postinst called with unknown argument '$1'" >&2
+                exit 1
+                ;;
+esac
+'''.format(self.__pkg)
+
+        if self.__uid or self.__gid:
+            sh += '''
+#-----------------------------------------------------------
+# Create groups/users if needed
+'''
+
+            for g in self.__gid:
+                sh += '''
+if ! getent group "{0}" >/dev/null; then
+        addgroup --system --quiet "{0}"
+fi
+'''.format(g)
+
+            for u in self.__uid:
+                args = [ '--system', '--quiet', '--disabled-password',
+                         '--ingroup', '"{0}"'.format(u.group) ]
+                if u.home is not None:
+                    args += [ '--home', '"{0}"'.format(u.home) ]
+                if u.allow_login:
+                    args += [ '--shell', '/bin/bash' ]
+                if u.desc is not None:
+                    args += [ '--gecos', '"{0}"'.format(u.desc) ]
+                args.append('"{0}"'.format(u.name))
+                sh += '''
+if ! getent passwd "{0}" >/dev/null; then
+        adduser {1}
+fi
+'''.format(u.name, ' '.join(args))
+
+        if self.__dir:
+            sh += '''
+#-----------------------------------------------------------
+# Create directories that the package doesn't
+'''
+            for d in self.__dir:
+                sh += '''
+if [ ! -d "{0}" ]; then
+        mkdir -p "{0}"
+        chown {1}:{2} "{0}"
+        chmod {3} "{0}"
+fi
+'''.format(d.name, d.user, d.group, oct(d.mode) if type(d.mode) is int else d.mode)
+
+        if self.__svc:
+            sh += '''
+#-----------------------------------------------------------
+# Update service runlevels
+'''
+
+            for s in self.__svc:
+                sh += '''
+if [ -x "/etc/init.d/{0}" ]; then
+        update-rc.d "{0}" defaults >/dev/null
+fi
+'''.format(s)
+
+        sh += '''
+#-----------------------------------------------------------
+
+exit 0
+'''
+        self._create(sh)
+
+class DebianPostrm(ScopedFileBase):
+    def __init__(self, package, uid = None, gid = None, dir = None, svc = None):
+        ScopedFileBase.__init__(self, 'debian/{0}.postrm'.format(package))
+        self.__pkg = package
+        self.__uid = uid or []
+        self.__gid = gid or []
+        self.__dir = dir or []
+        self.__svc = svc or []
+
+    def create(self):
+        sh = '''#!/bin/bash -e
+#
+# Debian post removal script
+
+set -e
+
+if [ "$1" = "purge" ]; then
+'''
+        for s in self.__svc:
+            sh += '''
+        update-rc.d {0} remove >/dev/null
+'''.format(s)
+
+        for u in self.__uid:
+            sh += '''
+        deluser --remove-home {0}
+'''.format(u.name)
+
+        sh += '''
+fi
+
+exit 0
+'''
+
+        self._create(sh)
+
+class DebianPackaging(mirbuild.packaging.Packaging):
+    name = 'debian'
+
+    def __init__(self, env, rules = None, compat = None, options = None):
+        self.__opt = LocalOptions()
+        self._env = env
+        self.__pkg = {}
+        self.__rules = DebianRules(verbose = env.verbose, debug = env.debug) if rules is None else rules
+        self.__compat = DebianCompat() if compat is None else compat
+        self.__options = DebianOptions() if options is None else options
+        self.__generated = [self.__rules, self.__compat, self.__options]
+
+    @property
+    def meta(self):
+        try:
+            return DebianControl().meta;
+        except IOError:
+            return None
+
+    @property
+    def rules(self):
+        return self.__rules
+
+    @property
+    def compat(self):
+        return self.__compat
+
+    @property
+    def options(self):
+        return self.__options
+
+    @staticmethod
+    def can_package():
+        return os.path.exists(DebianControl.control_file)
+
+    def add_options(self, parser):
+        deb = OptionGroup(parser, "Debian Packaging Options")
+        self.__opt.add_option(deb, '--debian-pkg-suffix', type = 'string', dest = 'suffix', metavar = 'STRING',
+                              help = 'append suffix to package version')
+        self.__opt.add_option(deb, '--debian-pkg-changelog-message', type = 'string', dest = 'changelog', metavar = 'STRING',
+                              help = 'use this string as changelog message')
+        self.__opt.add_option(deb, '--debian-pkg-buildpackage-args', type = 'string', dest = 'buildpackage_args', metavar = 'STRING',
+                              help = 'JSON encoded list of arguments to pass to dpkg-buildpackage', default = '["-tc"]')
+        self.__opt.add_bool_option(deb, '--debian-pkg-keep-rules', dest = 'keep_rules', help = 'keep auto-generated debian/rules file')
+        parser.add_option_group(deb)
+
+    def get_package_info(self, package):
+        return DebianControl().package_info(package)
+
+    def __prepare_packge(self):
+        for pkg, val in self.__pkg.iteritems():
+            args = {}
+            for k in 'uid gid dir svc'.split():
+                if val.has_key(k):
+                    args[k] = val[k]
+            if args:
+                self.add_file_generator(DebianPostinst(pkg, **args))
+                self.add_file_generator(DebianPostrm(pkg, **args))
+
+    def package(self):
+        self.__prepare_packge()
+        try:
+            for f in self.__generated:
+                self._env.dbg("creating " + f.filename)
+                f.create()
+                if self.__opt.keep_rules and isinstance(f, DebianRules):
+                    f.keep()
+            changelog_copy = ScopedFileCopy('debian/changelog', create = False)
+            if self.__opt.suffix is not None:
+                changelog_copy.create()
+                msg = self.__opt.changelog if self.__opt.changelog is not None else 'Generated by mirbuild.'
+                self._env.execute(self._env.tool('dch'), '-l', self.__opt.suffix, msg)
+            if self.__opt.buildpackage_args == '':
+                args = []
+            else:
+                try:
+                    args = json.loads(self.__opt.buildpackage_args)
+                except ValueError as ex:
+                    raise RuntimeError('Cannot parse buildpackage arguments ("{0}"): {1}'.format(self.__opt.buildpackage_args, ex))
+            self._env.execute(self._env.tool('dpkg-buildpackage'), *args)
+        finally:
+            for f in self.__generated:
+                self._env.dbg("removing " + f.filename)
+                f.remove()
+
+    def state_merge(self, value):
+        self.__opt.state_merge(value)
+
+    def add_file_generator(self, *file_generators):
+        self.__generated += list(file_generators)
+
+    def __append_pkg(self, package, key, value):
+        if package is None:
+            package = DebianControl().package
+        if not self.__pkg.has_key(package):
+            self.__pkg[package] = {}
+        if not self.__pkg[package].has_key(key):
+            self.__pkg[package][key] = []
+        self.__pkg[package][key].append(value)
+
+    def create_group(self, groupname, package = None):
+        self.__append_pkg(package, 'gid', groupname)
+
+    def create_user(self, username, group = 'users', home = None, desc = None, package = None, allow_login = False):
+        ui = mirbuild.packaging.UserInfo()
+        ui.name = username
+        ui.group = group
+        ui.home = home
+        ui.desc = desc
+        ui.allow_login = allow_login
+        self.__append_pkg(package, 'uid', ui)
+
+    def create_dir(self, dirname, user, group, mode = 0755, package = None):
+        di = mirbuild.packaging.DirectoryInfo()
+        di.name = dirname
+        di.user = user
+        di.group = group
+        di.mode = mode
+        self.__append_pkg(package, 'dir', di)
+
+    def add_service(self, service, package = None):
+        self.__append_pkg(package, 'svc', service)
+
+mirbuild.packaging.PackagingFactory.register(DebianPackaging)

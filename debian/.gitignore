@@ -1,0 +1,10 @@
+*
+!.gitignore
+!changelog
+!compat
+!control
+!copyright
+!pyversions
+!rules
+!source/format
+!source/local-options

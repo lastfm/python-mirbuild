@@ -1,0 +1,5 @@
+test (2.0.18-1-git.f76b429-1) stable; urgency=low
+
+  * Migration to git and debian packaging
+
+ -- Marcus Holland-Moritz <marcus@last.fm>  Sun, 24 Jul 2011 17:58:15 +0000

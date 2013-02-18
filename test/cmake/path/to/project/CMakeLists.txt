@@ -1,0 +1,15 @@
+PROJECT(libtest)
+
+CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
+
+INCLUDE(config.cmake)
+
+INCLUDE_DIRECTORIES(include)
+
+ADD_LIBRARY(test STATIC
+            src/test
+            )
+
+INSTALL(TARGETS test ARCHIVE DESTINATION lib)
+
+INSTALL(DIRECTORY include/test DESTINATION include)

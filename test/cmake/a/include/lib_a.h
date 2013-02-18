@@ -1,0 +1,1 @@
+#define LIB_A_CONSTANT 42
