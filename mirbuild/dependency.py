@@ -266,6 +266,7 @@ class Dependencies(object):
             else:
                 raise RuntimeError('No class found that can manage ' + arg.__class__.__name__)
 
+
     def any_is_a(self, cls):
         return any(grp.any_is_a(cls) for grp in self.__groups.itervalues())
 

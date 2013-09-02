@@ -1,3 +1,27 @@
+lastfm-python-mirbuild (0.3.4) stable; urgency=low
+
+  * Fixed debinstall for python only packages
+
+ -- Sachin Mangal <sachin@last.fm>  Thu, 29 Aug 2013 16:52:35 +0100
+
+lastfm-python-mirbuild (0.3.3) stable; urgency=low
+
+  * Bumping up the version number to build with latest mirbuild
+
+ -- Sachin Mangal <sachin@last.fm>  Thu, 29 Aug 2013 16:52:35 +0100
+
+lastfm-python-mirbuild (0.3.2) stable; urgency=low
+
+  * Added support for generating Python Thrift deps + Twisted
+
+ -- marius <marius@last.fm>  Mon, 5 Aug 2013 16:52:35 +0100
+
+lastfm-python-mirbuild (0.3.1) stable; urgency=low
+
+  * Fixed python install bug (missing _setup method)
+
+ -- marius <marius@last.fm>  Tue, 30 Jul 2013 16:49:35 +0100
+
 lastfm-python-mirbuild (0.3.0) stable; urgency=low
 
   * Automagically determine package prefix

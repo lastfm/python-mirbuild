@@ -32,7 +32,7 @@ This file contains a mirbuild project class for Thrift interface definitions.
 """
 
 __author__ = 'Sven Over <sven@last.fm>'
-__all__ = 'ThriftInterface ThriftDependency'.split()
+__all__ = ['ThriftInterface', 'ThriftDependency', 'PyThriftDependency']
 
 import glob
 import os
@@ -85,11 +85,79 @@ class ThriftDependency(mirbuild.dependency.CLibraryDependency):
             # we're applying C++ stuff so let the CLib dependency handle things
             super(ThriftDependency, self).apply(obj)
 
+
+class PyThriftDependency(mirbuild.dependency.Dependency):
+    def __init__(self, name):
+        super(PyThriftDependency, self).__init__(name)
+        self.__opt = mirbuild.options.LocalOptions(name)
+
+    def set_cache(self, cache):
+        cache.register(self.__opt)
+
+    def add_options(self, parser):
+        self.__opt.add_option(parser, '--with-{0}'.format(self.name), type = 'string', dest = 'path', metavar = 'PATH',
+                              help = 'use {0} includes/libraries from this path'.format(self.name))
+
+    def apply(self, obj):
+        if self._path is not None:
+            if hasattr(obj, "add_thrifts_path"):
+                path = self._validated_path(None, 'thrifts')
+                if os.path.isdir(path):
+                    obj.add_thrifts_path(path)
+                else:
+                    obj.add_thrifts_path(self._validated_path(obj.env, 'share', 'thrifts'))
+
+            # Add the thrift path to the library path
+            obj.add_library_path(self._path)
+            obj.env.dbg('Added lib-path: {0}'.format(self._path))
+
+    @property
+    def _path(self):
+        return getattr(self.__opt, 'path', None)
+
+    def state_merge(self, value):
+        self.__opt.state_merge({ "path": value })
+
+    @property
+    def has_options(self):
+        return True
+
+    @staticmethod
+    def validated_path(basepath, env = None, *path):
+        """
+        Return the given path prefixed with the path given by the --with-... options
+
+        If an environment is given as keyword parameter 'env', the existence of the
+        returned path is checked and a warning is output through the environment
+        in case it does not exist.
+        """
+        if basepath is not None:
+            result = os.path.realpath(os.path.join(os.path.expanduser(basepath), *path))
+
+            if env is not None and not os.path.isdir(result):
+                env.warn(result + ' not found.')
+
+            return result
+        else:
+            raise ValueError
+
+    def _validated_path(self, env = None, *path):
+        return PyThriftDependency.validated_path(self._path, env, *path)
+
+
 class ThriftDependencyGroup(mirbuild.dependency.DependencyGroup):
     group_name = 'Thrift Interface Definition'
     managed_classes = [ThriftDependency]
 
+
+class PyThriftDependencyGroup(mirbuild.dependency.DependencyGroup):
+    group_name = 'Py Thrift Interface Def'
+    managed_classes = [PyThriftDependency]
+
+
 mirbuild.dependency.Dependencies.register_group_class(ThriftDependencyGroup)
+mirbuild.dependency.Dependencies.register_group_class(PyThriftDependencyGroup)
+
 
 class ThriftDebianPackaging(mirbuild.packagers.DebianPackaging):
     can_package = None
@@ -119,11 +187,10 @@ class ThriftDebianPackaging(mirbuild.packagers.DebianPackaging):
             os.symlink(os.path.relpath('changelog', 'debian'), os.path.join('debian', 'changelog'))
             build_dep = ["debhelper (>= 7.0.50~)", "python (>= 2.6.6-3~)", "{0}python-mirbuild (>= 0.2.24)".format(self._prefix), "thrift-compiler (>= 0.5.0-lastfm2)"]
 
-            for dep in thrift_dependencies:
-                build_dep.append("{0}{1}".format(self._prefix, dep))
-                build_dep.append("{0}lib{1}-dev".format(self._prefix, dep))
-
             if 'cpp' in self._languages:
+                for dep in thrift_dependencies:
+                    build_dep.append("{0}{1}".format(self._prefix, dep))
+                    build_dep.append("{0}lib{1}-dev".format(self._prefix, dep))
                 build_dep += ["cmake (>= 2.8)", "libthrift-dev", "libboost-dev"]
 
             x_python_version_line = ""
@@ -184,6 +251,9 @@ Description: Static library and include files for {1}
                 open(os.path.join('debian', '{0}python-{1}.install'.format(self._prefix, self._env.project_name)), 'w').write('debian/tmp/usr/lib/python*\n')
                 open(os.path.join('debian', '{0}{1}-bin.install'.format(self._prefix, self._env.project_name)), 'w').write('debian/tmp/usr/bin/*-remote\n')
                 depends = ['${python:Depends}', '${misc:Depends}']
+                for dep in thrift_dependencies:
+                    depends.append("{0}python-{1}".format(self._prefix, dep))
+                print(depends)
                 control.write("""Package: {0}python-{1}
 Architecture: all
 Depends: {2}
@@ -233,7 +303,12 @@ class ThriftCompiler(object):
         cmd += ['-I', '/usr/share/thrifts']    # add default include path (fixes MIR-2587)
         if output_dir is not None:
             cmd += ['-o', os.path.realpath(output_dir)]
+            if 'twisted' in generator:
+                self.__env.execute_tool(['mkdir', '-p',  os.path.join(os.path.realpath(output_dir), 'gen-py')])
+                cmd += ['--out', os.path.join(os.path.realpath(output_dir), 'gen-py')]
         self.__env.execute_tool(cmd + ['--gen', generator, os.path.relpath(source, self.__thrift_dir)], cwd = self.__thrift_dir)
+
+
 
 class ThriftInterface(mirbuild.cmake.CMakeProject, mirbuild.python.PythonSetupMixin):
     default_dependency_class = ThriftDependency
@@ -249,6 +324,7 @@ class ThriftInterface(mirbuild.cmake.CMakeProject, mirbuild.python.PythonSetupMi
     def __init__(self, name, **opts):
         if not name.startswith('thrift-'):
             raise RuntimeError('Names of ThriftInterface projects must start with "thrift-", this one does not ("{0}")'.format(name))
+        self.__py_twisted = opts['py_twisted'] if 'py_twisted' in opts else False
         mirbuild.cmake.CMakeProject.__init__(self, name, **opts)
         mirbuild.python.PythonSetupMixin.__init__(self)
         self.__thriftspath = []
@@ -383,9 +459,9 @@ class ThriftInterface(mirbuild.cmake.CMakeProject, mirbuild.python.PythonSetupMi
             if self._py:
                 thrift = ThriftCompiler(self.env)
                 thrift.include(os.path.join(self.opt.prefix, 'share', 'thrifts'), *self.__thriftspath)
-
+                twisted_ext = ',twisted' if self.__py_twisted else ''
                 for i in self._py:
-                    thrift.run(generator = 'py:new_style=1', output_dir = 'build', source = i)
+                    thrift.run(generator = 'py:new_style=1' + twisted_ext, output_dir = 'build', source = i)
 
         return self._py
 
@@ -432,7 +508,10 @@ INSTALL(DIRECTORY include DESTINATION include)
             python_namespaces = mirbuild.python.PythonHelpers.modules2namespaces(python_modules)
 
             thrift_dependency_group = self._deps.get_dependency_group(ThriftDependencyGroup)
-            thrift_dependencies = thrift_dependency_group.names if thrift_dependency_group else ()
+            thrift_dependencies = thrift_dependency_group.names if thrift_dependency_group else []
+            python_thrift_dependency_group = self._deps.get_dependency_group(PyThriftDependencyGroup)
+            thrift_dependencies.extend(python_thrift_dependency_group.names if python_thrift_dependency_group else [])
+            thrift_dependencies = thrift_dependencies if thrift_dependencies else ()
 
             # Python setup
             open(self.python_setup_file, 'w').write(
