@@ -77,11 +77,18 @@ class PythonTestBuilder(mirbuild.test.TestBuilder):
 
 class PythonTestRunner(mirbuild.test.TestRunner):
     name = 'python'
+    deps_path = []
 
     def execute(self, dir, tests, observer):
         oldpypath = os.environ.get('PYTHONPATH', None)
         try:
-            os.environ['PYTHONPATH'] = ':'.join([os.path.realpath(p) for p in glob.glob('build/lib*')])
+            # Set the python path for tests
+            test_python_path = [os.path.realpath(p) for p in glob.glob('build/lib*')]
+            for d in deps_paths:
+                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'lib') +
+                ## Just a hack to work with thrift dependencies
+                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'build',
+            os.environ['PYTHONPATH'] = ':'.join(test_python_path)
             scd = ScopedChdir(dir)
             for t in tests:
                 assert isinstance(t, mirbuild.test.Test)
@@ -189,6 +196,7 @@ class PythonProject(mirbuild.project.Project, PythonSetupMixin):
 
     def add_library_path(self, *args):
         self.__libpath += args
+        PythonTestRunner.deps_paths += arg
 
     @property
     def setup_info(self):

@@ -1,3 +1,9 @@
+lastfm-python-mirbuild (0.3.5) stable; urgency=low
+
+  * Added support for Python integration tests
+
+ -- Marius Cobzarenco <marius@last.fm>  Wed, 4 Sep 2013 16:52:35 +0100
+
 lastfm-python-mirbuild (0.3.4) stable; urgency=low
 
   * Fixed debinstall for python only packages
