@@ -85,9 +85,9 @@ class PythonTestRunner(mirbuild.test.TestRunner):
             # Set the python path for tests
             test_python_path = [os.path.realpath(p) for p in glob.glob('build/lib*')]
             for d in deps_paths:
-                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'lib') +
+                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'lib') + '*'))
                 ## Just a hack to work with thrift dependencies
-                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'build',
+                test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'build', 'lib') + '*'))
             os.environ['PYTHONPATH'] = ':'.join(test_python_path)
             scd = ScopedChdir(dir)
             for t in tests:
