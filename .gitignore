@@ -2,3 +2,4 @@
 /build-stamp
 /build/
 /setup.py
+*.pyc

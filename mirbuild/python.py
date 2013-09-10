@@ -77,14 +77,14 @@ class PythonTestBuilder(mirbuild.test.TestBuilder):
 
 class PythonTestRunner(mirbuild.test.TestRunner):
     name = 'python'
-    deps_path = []
+    deps_paths = []
 
     def execute(self, dir, tests, observer):
         oldpypath = os.environ.get('PYTHONPATH', None)
         try:
             # Set the python path for tests
             test_python_path = [os.path.realpath(p) for p in glob.glob('build/lib*')]
-            for d in deps_paths:
+            for d in PythonTestRunner.deps_paths:
                 test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'lib') + '*'))
                 ## Just a hack to work with thrift dependencies
                 test_python_path.extend(glob.glob(os.path.join(os.path.realpath(d), 'build', 'build', 'lib') + '*'))
@@ -196,7 +196,7 @@ class PythonProject(mirbuild.project.Project, PythonSetupMixin):
 
     def add_library_path(self, *args):
         self.__libpath += args
-        PythonTestRunner.deps_paths += arg
+        PythonTestRunner.deps_paths += args
 
     @property
     def setup_info(self):
