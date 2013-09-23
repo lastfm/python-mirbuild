@@ -187,9 +187,11 @@ class ThriftDebianPackaging(mirbuild.packagers.DebianPackaging):
             os.symlink(os.path.relpath('changelog', 'debian'), os.path.join('debian', 'changelog'))
             build_dep = ["debhelper (>= 7.0.50~)", "python (>= 2.6.6-3~)", "{0}python-mirbuild (>= 0.2.24)".format(self._prefix), "thrift-compiler (>= 0.5.0-lastfm2)"]
 
+            for dep in thrift_dependencies:
+                build_dep.append("{0}{1}".format(self._prefix, dep))
+
             if 'cpp' in self._languages:
                 for dep in thrift_dependencies:
-                    build_dep.append("{0}{1}".format(self._prefix, dep))
                     build_dep.append("{0}lib{1}-dev".format(self._prefix, dep))
                 build_dep += ["cmake (>= 2.8)", "libthrift-dev", "libboost-dev"]
 
