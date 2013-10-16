@@ -1,3 +1,9 @@
+lastfm-python-mirbuild (0.3.7) stable; urgency=low
+
+  * Added PythonDependency stub to help with building eggs
+
+ -- Marius Cobzarenco <marius@last.fm>  Wed, 16 Oct 2013 16:16:57 +0100
+
 lastfm-python-mirbuild (0.3.6) stable; urgency=low
 
   * Fixed a bug introduced in release 3.4
