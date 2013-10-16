@@ -236,6 +236,110 @@ class CLibraryDependencyGroup(DependencyGroup):
     group_name = 'C Library'
     managed_classes = [CLibraryDependency]
 
+
+class PythonDependency(Dependency):
+    def __init__(self, name):
+        Dependency.__init__(self, name)
+        self.__opt = LocalOptions(name)
+
+    @staticmethod
+    def isdir(basepath, env = None, *path):
+        if basepath is not None:
+            result = os.path.realpath(os.path.join(os.path.expanduser(basepath), *path))
+            return os.path.isdir(result)
+        else:
+            raise ValueError
+
+    @staticmethod
+    def validated_path(basepath, env = None, *path):
+        """
+        Return the given path prefixed with the path given by the --with-... options
+
+        If an environment is given as keyword parameter 'env', the existence of the
+        returned path is checked and a warning is output through the environment
+        in case it does not exist.
+        """
+        if basepath is not None:
+            result = os.path.realpath(os.path.join(os.path.expanduser(basepath), *path))
+
+            if env is not None and not os.path.isdir(result):
+                env.warn(result + ' not found.')
+
+            return result
+        else:
+            raise ValueError
+
+    def _validated_path(self, env = None, *path):
+        return PythonDependency.validated_path(self._path, env, *path)
+
+    def _isdir(self, env = None, *path):
+        return PythonDependency.isdir(self._path, env, *path)
+
+    def set_cache(self, cache):
+        cache.register(self.__opt)
+
+    def add_options(self, parser):
+        self.__opt.add_option(parser, '--with-{0}'.format(self.name), type = 'string', dest = 'path', metavar = 'PATH',
+                              help = 'use {0} includes/libraries from this path'.format(self.name))
+
+    def apply(self, obj):
+        return
+        if self._path:
+            # Adding includes is simple, in or out of source makes no difference
+            ipath = self._validated_path(obj.env)
+            obj.add_include_path(ipath)
+            obj.env.dbg('Added inc-path: {0}'.format(ipath))
+
+            # Adding library paths is a little more complex since the dependencies could
+            # have been build either in-source or out-of-source and we don't really know.
+            # We'll use a little bit of educated guess work try try and figure it out!
+
+            # This is the in-source library path
+            path = 'lib'
+            path_exists = self._isdir(obj.env, path)
+
+            # This is the out-of-source library path
+            oospath = os.path.join(obj.env.oosbuild_dir, path)
+            oospath_exists = self._isdir(obj.env, oospath)
+
+            # Ok, we now need to try and find the most suitable library path:
+            # - If the most suitable library path exists use it
+            # - If it doesn't exist but there's an alternative use that
+            # - If neither exist fallback on the most suitable (warning it's not there)
+            if obj.env.out_of_source:
+                if oospath_exists or not path_exists:
+                    path = oospath
+            else:
+                if not path_exists and oospath_exists:
+                    path = oospath
+
+            vpath = self._validated_path(obj.env, path)
+
+            # Add the verified path we decided to use (with a little bit of debug for good measure)
+            obj.add_library_path(vpath)
+            obj.env.dbg('Added lib-path: {0}'.format(vpath))
+
+    @property
+    def _path(self):
+        return getattr(self.__opt, 'path', None)
+
+    def state_merge(self, value):
+        self.__opt.state_merge({ "path": value })
+
+    @property
+    def has_options(self):
+        return True
+
+    @property
+    def is_satisfied(self):
+        return self._path is not None
+
+
+class PythonDependencyGroup(DependencyGroup):
+    group_name = 'Python Dependency'
+    managed_classes = [PythonDependency]
+
+
 class Dependencies(object):
     __dependency_group_classes = set([DependencyGroup])
 
@@ -331,3 +435,4 @@ class Dependencies(object):
         return m
 
 Dependencies.register_group_class(CLibraryDependencyGroup)
+Dependencies.register_group_class(PythonDependencyGroup)

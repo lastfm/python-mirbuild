@@ -156,6 +156,7 @@ class PythonProject(mirbuild.project.Project, PythonSetupMixin):
     test_builder_class = PythonTestBuilder
     test_runner_class = PythonTestRunner
     python_setup_file = 'setup.py'
+    default_dependency_class = mirbuild.dependency.PythonDependency
 
     def __init__(self, name, **opts):
         # Steal the 'setup' and 'packages' named parameter
