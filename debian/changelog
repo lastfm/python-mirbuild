@@ -1,3 +1,10 @@
+lastfm-python-mirbuild (0.3.8) stable; urgency=low
+
+  * Making build system compatible with new version of boost
+    filesystem library
+
+ -- Sachin Mangal <sachin@last.fm>  Fri, 10 Jan 2014 16:19:31 +0000
+
 lastfm-python-mirbuild (0.3.7) stable; urgency=low
 
   * Added PythonDependency stub to help with building eggs

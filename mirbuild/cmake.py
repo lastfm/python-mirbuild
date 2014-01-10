@@ -774,7 +774,7 @@ class CMakeFindBoost(CMakeFind):
 
         # Ensure we're using v2 of Boost Filesystem
         # http://www.boost.org/doc/libs/1_47_0/libs/filesystem/v3/doc/index.htm
-        cm.cmd('ADD_DEFINITIONS', '-DBOOST_FILESYSTEM_VERSION=2')
+        # cm.cmd('ADD_DEFINITIONS', '-DBOOST_FILESYSTEM_VERSION=2')
         cm.newline()
 
 class CMakeFindCurl(CMakeFind):
