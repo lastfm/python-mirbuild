@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 #
 # Copyright © 2011-2013 Last.fm Limited
 #
@@ -104,10 +106,20 @@ class BPY(object):
 
     @staticmethod
     def debcontents(deb, filter = None):
-        # ar p libmoost-dev_3.7.1-1_i386.deb data.tar.gz | gzip -dc | tar tf -
-        p1 = subprocess.Popen(['ar', 'p', deb, 'data.tar.gz'], stdout = subprocess.PIPE)
-        p2 = subprocess.Popen(['gzip', '-dc'], stdin = p1.stdout, stdout = subprocess.PIPE)
-        p3 = subprocess.Popen(['tar', 'tf', '-'], stdin = p2.stdout, stdout = subprocess.PIPE)
+        # ar t mypackage.deb | grep data.tar
+        p1 = subprocess.Popen(['ar', 't', deb],                        stdout = subprocess.PIPE)
+        p2 = subprocess.Popen(['grep', 'data.tar'], stdin = p1.stdout, stdout = subprocess.PIPE)
+        p1.stdout.close()
+        datafile = p2.communicate()[0].strip()
+
+        decompressor = "gzip"
+        if datafile.endswith(".xz"):
+            decompressor = "xz"
+
+        # ar p mypackage.deb data.tar.gz | gzip -dc | tar tf -
+        p1 = subprocess.Popen(['ar', 'p', deb, datafile],                    stdout = subprocess.PIPE)
+        p2 = subprocess.Popen([decompressor, '-dc'],      stdin = p1.stdout, stdout = subprocess.PIPE)
+        p3 = subprocess.Popen(['tar', 'tf', '-'],         stdin = p2.stdout, stdout = subprocess.PIPE)
         p1.stdout.close()
         p2.stdout.close()
         output = p3.communicate()[0]
