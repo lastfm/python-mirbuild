@@ -305,7 +305,7 @@ class ThriftCompiler(object):
         cmd += ['-I', '/usr/share/thrifts']    # add default include path (fixes MIR-2587)
         if output_dir is not None:
             cmd += ['-o', os.path.realpath(output_dir)]
-            if 'twisted' in generator:
+            if ('twisted' in generator) or ('tornado' in generator):
                 self.__env.execute_tool(['mkdir', '-p',  os.path.join(os.path.realpath(output_dir), 'gen-py')])
                 cmd += ['--out', os.path.join(os.path.realpath(output_dir), 'gen-py')]
         self.__env.execute_tool(cmd + ['--gen', generator, os.path.relpath(source, self.__thrift_dir)], cwd = self.__thrift_dir)
@@ -327,6 +327,7 @@ class ThriftInterface(mirbuild.cmake.CMakeProject, mirbuild.python.PythonSetupMi
         if not name.startswith('thrift-'):
             raise RuntimeError('Names of ThriftInterface projects must start with "thrift-", this one does not ("{0}")'.format(name))
         self.__py_twisted = opts['py_twisted'] if 'py_twisted' in opts else False
+        self.__py_tornado = opts['py_tornado'] if 'py_tornado' in opts else False
         mirbuild.cmake.CMakeProject.__init__(self, name, **opts)
         mirbuild.python.PythonSetupMixin.__init__(self)
         self.__thriftspath = []
@@ -462,8 +463,9 @@ class ThriftInterface(mirbuild.cmake.CMakeProject, mirbuild.python.PythonSetupMi
                 thrift = ThriftCompiler(self.env)
                 thrift.include(os.path.join(self.opt.prefix, 'share', 'thrifts'), *self.__thriftspath)
                 twisted_ext = ',twisted' if self.__py_twisted else ''
+                generator = 'py:tornado' if self.__py_tornado else 'py:new_style=1' + twisted_ext
                 for i in self._py:
-                    thrift.run(generator = 'py:new_style=1' + twisted_ext, output_dir = 'build', source = i)
+                    thrift.run(generator = generator, output_dir = 'build', source = i)
 
         return self._py
 
