@@ -793,7 +793,7 @@ class CMakeFindCurl(CMakeFind):
         cm.newline()
 
 class CMakeFindLua(CMakeFind):
-    _handled_pkgs = ['lua50', 'lua51']
+    _handled_pkgs = ['lua50', 'lua51', 'lua52']
 
     def _do_configure(self, env, config, cm):
         cm.writeln('FIND_PACKAGE({0})'.format(self._pkg.title()))
